@@ -1,0 +1,48 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: back-end
+  labels:
+    app: back-end
+  namespace: xueyigou
+spec:
+  selector:
+    matchLabels:
+      app: back-end
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: back-end
+    spec:
+      containers:
+      - name: back-end
+        image: "172.28.82.183:30002/library/back-end:latest"
+        imagePullPolicy: Always
+        volumeMounts:
+          - mountPath: /tmp/public/
+            name: pictures
+      volumes:
+        - name: pictures
+          persistentVolumeClaim:
+            claimName: back-end-pvc
+            readOnly: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: back-end
+  labels:
+    app: back-end
+  namespace: xueyigou
+spec:
+  selector:
+    app: back-end
+  ports:
+    - name: back-end
+      protocol: TCP
+      port: 8080
+      nodePort: 30001
+      targetPort: 8080
+  type: NodePort

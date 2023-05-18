@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: back-end-pvc
+  namespace: xueyigou
+  labels:
+    app: back-end
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: managed-nfs-storage
+  resources:
+    requests:
+      storage: 5Gi

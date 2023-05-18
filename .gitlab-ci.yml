@@ -1,0 +1,109 @@
+image: 172.28.82.183:30002/library/ubuntu:20.04
+stages:
+  - compile
+  - build
+  - deploy-test
+  - deploy
+
+.go-cache:
+  variables:
+    GOPATH: $CI_PROJECT_DIR/.go
+  before_script:
+    - mkdir -p .go
+  cache:
+    key: xueyigou
+    paths:
+      - .go/pkg/mod/
+    # 加速构建只拉取缓存
+    policy: pull
+
+# 编译全局变量定义
+variables:
+  # 镜像名称(一般直接使用项目名称)
+  PROJECT_NAME: "xueyigou"
+  DOCKER_DRIVER: overlay2
+  DOCKER_HOST: tcp://localhost:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_TLS_VERIFY: 1
+  DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+  # PROXY_URL: "http://10.9.24.190:30581"
+  # 重写构建pod SA权限
+  KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: "gitlab-runner"
+
+compile:
+  stage: compile
+  image:
+    name: 172.28.82.183:30002/library/golang:1.20.4
+  extends:
+    - .go-cache
+  tags:
+    - xueyigou
+  retry:
+    when: always
+  before_script:
+    - go version
+    - go env -w GO111MODULE=on
+    - go env -w GOPROXY="https://goproxy.cn,direct"
+  script:
+    - pwd
+    - go mod tidy
+    - mkdir make
+    - GOOS=linux GOARCH=amd64 CGO_ENABLED=0  go build -o ./make/main-linux ./main.go
+  artifacts:
+    paths:
+      - make/
+    expire_in: 3 days
+  only:
+    - /^main.*$/
+    - merge_requests
+
+
+build:
+  stage: build
+  image:
+    name: 172.28.82.183:30002/library/docker:20.10.17
+  services:
+    - docker:20.10.17-dind
+  tags:
+    - xueyigou
+  before_script:
+    - docker info
+  script:
+    - docker build -t back-end:latest .
+    - docker tag back-end:latest 172.28.82.183:30002/library/back-end:latest
+    - docker login 172.28.82.183:30002 -u admin -p xueyigou123.
+    - docker push 172.28.82.183:30002/library/back-end:latest
+  dependencies:
+    - compile
+  only:
+    - merge_requests
+    - /^main.*$/
+
+
+deploy-test:
+  stage: deploy-test
+  image:
+    name: 172.28.82.183:30002/library/kubectl:1.20.4
+  tags:
+    - xueyigou
+  script:
+    - kubectl delete -f k8s/test/deploy.yml
+    - kubectl apply -f k8s/test/deploy.yml
+  only:
+    - merge_requests
+    - main_test
+  allow_failure: true
+
+deploy:
+  stage: deploy
+  image:
+    name: 172.28.82.183:30002/library/kubectl:1.20.4
+  tags:
+    - xueyigou
+  script:
+    - kubectl apply -f k8s/formal/pvc.yml
+    - kubectl delete -f k8s/formal/deploy.yml
+    - kubectl apply -f k8s/formal/deploy.yml
+  only:
+    - merge_requests
+    - main
